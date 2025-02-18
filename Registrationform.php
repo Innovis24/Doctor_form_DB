@@ -18,16 +18,22 @@ if ($conn->connect_error) {
 $method = $_SERVER['REQUEST_METHOD'];
 switch ($method) {
     case 'GET':
-        handleGet($conn);
+        handleGet($conn); // Call getReports function for 'getReports' action
         break;
     case 'POST':
         handlePost($conn);
         break;
     case 'DELETE':
-        handleDelete($conn);
-        break;
+        $action = isset($_GET['action']) ? $_GET['action'] : 'default';
+        if ($action === 'deleteuser') {
+            handleDelete($conn);
+        } elseif ($action === 'deleteImage') {
+            handleImgDelete($conn);
+        } 
+    break;
+
     default:
-    echo json_encode(['error' => 'Invalid request method']);
+        echo json_encode(['error' => 'Invalid request method']);
 }
 $conn->close();
 // Function to handle GET requests
@@ -42,15 +48,13 @@ function handleGet($conn) {
         }
         echo json_encode($records);
     } else {
-        echo json_encode(['message' => 'No records found']);
+        echo json_encode(['code'=>400,'message' => 'No records found']);
     }
 }
+
 // Function to handle POST requests
 function handlePost($conn) {
-   
-    $inputData = file_get_contents("php://input");
-    $data = json_decode($inputData, true);
-
+    
     $name = isset($_POST['name']) ? $conn->real_escape_string($_POST['name']) : null;
     $fathername = isset($_POST['fatherName']) ? $conn->real_escape_string($_POST['fatherName']) : null;
     $dateofbirth = isset($_POST['dob']) ? $conn->real_escape_string($_POST['dob']) : null;
@@ -70,8 +74,13 @@ function handlePost($conn) {
     $stateofmedicine = isset($_POST['stateOfMedicine']) ? $conn->real_escape_string($_POST['stateOfMedicine']) : null;
     $yearofqualification = isset($_POST['yearOfQualification']) ? $conn->real_escape_string($_POST['yearOfQualification']) : null;
     $id =  isset($_POST['Sno']) ? $conn->real_escape_string($_POST['Sno']) : null;
+    
+    $postgraduate = json_decode($_POST['postgraduate'],true);
+    $postgraduatesJson = json_encode($postgraduate);
 
-    if (!$id) 
+    $id =  isset($_POST['Sno']) ? $conn->real_escape_string($_POST['Sno']) : null;
+    $galleryImagePaths = [];
+    if (!$id)     //Add new user
     {
     $fileTmpPath = $_FILES['images']['tmp_name'];
     $fileName = $_FILES['images']['name'];
@@ -92,8 +101,40 @@ function handlePost($conn) {
            return;
        }
    
+       if (isset($_FILES['galleryImages'])) {
+        $galleryImages = $_FILES['galleryImages'];
+        $fileCount = count($galleryImages['name']); // Number of files uploaded
+        $uploadDirectory = $_SERVER['DOCUMENT_ROOT'] . '/Doctor_search/gallery_img/'; // Gallery upload directory
     
-        $InsertQuery = "INSERT INTO registration_form (Name, Fathername,DOB,Gender,Phonenumber,Email,Address,City,State,Qualification,Specialization,RegistrationNumber,Yearofregistration,Employmenttype,Uprnnumber,Universityname,Stateofmedicine,Yearofqualification,image_name, image_path) VALUES ('$name', '$fathername', '$dateofbirth','$gender','$phonenumber','$email','$address','$city','$state','$qualification','$specialization','$registrationNumber','$yearofregistration','$employmenttype','$uprnnumber','$universityname','$stateofmedicine','$yearofqualification','$fileName','$imagePath')";
+        if (!is_dir($uploadDirectory)) {
+            mkdir($uploadDirectory, 0755, true);
+        }
+    
+        $galleryImagePaths = [];
+    
+        for ($i = 0; $i < $fileCount; $i++) {
+            $fileName = $galleryImages['name'][$i];
+            $fileTmpName = $galleryImages['tmp_name'][$i];
+            $fileError = $galleryImages['error'][$i];
+    
+            if ($fileError === 0) {
+                $newFileName = uniqid('', true) . '.' . pathinfo($fileName, PATHINFO_EXTENSION);
+                $dest_path = $uploadDirectory . $newFileName;
+    
+                if (move_uploaded_file($fileTmpName, $dest_path)) {
+                    $galleryImagePaths[] = "gallery_img/" . $newFileName; // Store relative path
+                }
+            }
+        }  
+        // echo json_encode(['code'=>200,'message'=>'Record inserted successfully']);
+    } else {
+        // echo json_encode(['error' => 'No images uploaded.']);
+    }
+
+    $galleryImagePathsString = implode(",", $galleryImagePaths);
+       
+
+        $InsertQuery = "INSERT INTO registration_form (Name, Fathername,DOB,Gender,Phonenumber,Email,Address,City,State,Qualification,Specialization,RegistrationNumber,Yearofregistration,Employmenttype,Uprnnumber,Universityname,Stateofmedicine,Yearofqualification,image_name, image_path,gallery_image_paths,Postgraduation) VALUES ('$name', '$fathername', '$dateofbirth','$gender','$phonenumber','$email','$address','$city','$state','$qualification','$specialization','$registrationNumber','$yearofregistration','$employmenttype','$uprnnumber','$universityname','$stateofmedicine','$yearofqualification','$fileName','$imagePath','$galleryImagePathsString','$postgraduatesJson')";
             if ($conn->query($InsertQuery)) {
                 
                 echo json_encode(['code'=>200,'message'=>'Record inserted successfully']);
@@ -104,12 +145,61 @@ function handlePost($conn) {
        
     }
     else{
-
+        //update new user
         $image_name =  isset($_POST['image_name']) ? $conn->real_escape_string($_POST['image_name']) : null;
         $image_path =  isset($_POST['image_path']) ? $conn->real_escape_string($_POST['image_path']) : null;
         $image =  isset($_POST['images']) ? $conn->real_escape_string($_POST['images']) : null;
         
-        if($image_name ===  $image){
+        if($image_name ===  $image){   //if image name same
+            // echo json_encode(['same img']);
+            $sql = "SELECT gallery_image_paths FROM registration_form WHERE Sno = '$id'";
+            $result = $conn->query($sql);
+
+            if ($result->num_rows > 0) {
+                $row = $result->fetch_assoc();
+                $existingGalleryPathsString = $row['gallery_image_paths']; // Existing paths
+                
+                // Convert the string to an array (assuming it's a comma-separated string)
+                $existingGalleryPaths = explode(",", $existingGalleryPathsString);
+            } else {
+                $existingGalleryPaths = [];  // No existing paths
+            }
+
+            if (isset($_FILES['galleryImages'])) {
+                $galleryImages = $_FILES['galleryImages'];
+                $fileCount = count($galleryImages['name']); // Number of files uploaded
+                $uploadDirectory = $_SERVER['DOCUMENT_ROOT'] . '/Doctor_search/gallery_img/'; // Gallery upload directory
+                $galleryImagePaths = []; 
+               
+        
+                for ($i = 0; $i < $fileCount; $i++) {
+                    $fileName = $galleryImages['name'][$i];
+                    $fileTmpName = $galleryImages['tmp_name'][$i];
+                    $fileError = $galleryImages['error'][$i];
+        
+                    if ($fileError === 0) {
+                        $newFileName = uniqid('', true) . '.' . pathinfo($fileName, PATHINFO_EXTENSION);
+                        $dest_path = $uploadDirectory . $newFileName;
+        
+                        if (move_uploaded_file($fileTmpName, $dest_path)) {
+                            $galleryImagePaths[] = "gallery_img/" . $newFileName; // Store relative path
+                        }
+                    }
+                }
+            }
+              // Ensure $existingGalleryPaths is always an array
+                if (!is_array($existingGalleryPaths)) {
+                    $existingGalleryPaths = !empty($existingGalleryPaths) ? explode(",", $existingGalleryPaths) : [];
+                }
+
+             
+                $mergedGalleryPaths = array_merge($existingGalleryPaths, $galleryImagePaths);
+                
+             
+                // Convert back to a comma-separated string for database storage
+                $galleryImagePathsString = implode(",", $mergedGalleryPaths);
+                         
+
 
             $update_sql = "UPDATE registration_form SET 
             Name = '$name', 
@@ -122,7 +212,9 @@ function handlePost($conn) {
                         Yearofregistration = '$yearofregistration',Employmenttype = '$employmenttype', 
                         Uprnnumber = '$uprnnumber', 
                         Universityname = '$universityname' , Stateofmedicine = '$stateofmedicine' ,
-                        Yearofqualification = '$yearofqualification' ,image_name = '$image_name', image_path ='$image_path'
+                        Yearofqualification = '$yearofqualification' ,image_name = '$image_name', image_path ='$image_path',
+                        gallery_image_paths = '$galleryImagePathsString',
+                        Postgraduation='$postgraduatesJson'
                         WHERE  Sno = '$id' ";
             
             
@@ -131,8 +223,10 @@ function handlePost($conn) {
                 } else {
                     echo json_encode(['error' => 'Error while update record ' . $conn->error]);
                 }
+
         }
-        else{
+        else{              
+            // echo json_encode(['notsame img']);                //if update image name
             //WHILE UPDATE IMAGE
             $imagePath = $_SERVER['DOCUMENT_ROOT'] . '/Doctor_search/' . $image_path;
             // Delete the image file if it exists
@@ -160,6 +254,48 @@ function handlePost($conn) {
                    return;
                }
 
+               $sql = "SELECT gallery_image_paths FROM registration_form WHERE Sno = '$id'";
+               $result = $conn->query($sql);
+   
+               if ($result->num_rows > 0) {
+                   $row = $result->fetch_assoc();
+                   $existingGalleryPathsString = $row['gallery_image_paths']; // Existing paths
+                   
+                   // Convert the string to an array (assuming it's a comma-separated string)
+                   $existingGalleryPaths = explode(",", $existingGalleryPathsString);
+               } else {
+                   $existingGalleryPaths = [];  // No existing paths
+               }
+
+                 if (isset($_FILES['galleryImages'])) {
+                    $galleryImages = $_FILES['galleryImages'];
+                    $fileCount = count($galleryImages['name']); // Number of files uploaded
+                    $uploadDirectory = $_SERVER['DOCUMENT_ROOT'] . '/Doctor_search/gallery_img/'; // Gallery upload directory
+                    $galleryImagePaths = []; 
+                   
+            
+                    for ($i = 0; $i < $fileCount; $i++) {
+                        $fileName = $galleryImages['name'][$i];
+                        $fileTmpName = $galleryImages['tmp_name'][$i];
+                        $fileError = $galleryImages['error'][$i];
+            
+                        if ($fileError === 0) {
+                            $newFileName = uniqid('', true) . '.' . pathinfo($fileName, PATHINFO_EXTENSION);
+                            $dest_path = $uploadDirectory . $newFileName;
+            
+                            if (move_uploaded_file($fileTmpName, $dest_path)) {
+                                $galleryImagePaths[] = "gallery_img/" . $newFileName; // Store relative path
+                            }
+                        }
+                    }
+                }
+                  
+                $mergedGalleryPaths = array_merge($existingGalleryPaths, $galleryImagePaths);
+                
+             
+                // Convert back to a comma-separated string for database storage
+                $galleryImagePathsString = implode(",", $mergedGalleryPaths);
+    
                $update_sql = "UPDATE registration_form SET 
                Name = '$name', 
                            Fathername = '$fathername', 
@@ -171,22 +307,17 @@ function handlePost($conn) {
                            Yearofregistration = '$yearofregistration',Employmenttype = '$employmenttype', 
                            Uprnnumber = '$uprnnumber', 
                            Universityname = '$universityname' , Stateofmedicine = '$stateofmedicine' ,
-                           Yearofqualification = '$yearofqualification' ,image_name = '$fileName', image_path ='$imagePath'
-                           WHERE  Sno = '$id' ";
-               
-               
+                           Yearofqualification = '$yearofqualification' ,image_name = '$fileName', image_path ='$imagePath',
+                           gallery_image_paths = '$galleryImagePathsString',
+                           Postgraduation='$postgraduatesJson'
+                           WHERE  Sno = '$id' ";               
                    if ($conn->query($update_sql)) {
                        echo json_encode(['code'=>200,'message'=>'Record update successfully']);
                    } else {
                        echo json_encode(['error' => 'Error while update record ' . $conn->error]);
                    }
-        }
-       
+        }       
     }
-
-   
-
-
 }
 // Function to handle DELETE requests
 function handleDelete($conn) {
@@ -211,6 +342,50 @@ function handleDelete($conn) {
     } else {
         echo json_encode(['error' => "Error deleting record with Sno $Sno: " . $conn->error]);
     }
+}
+
+// Function to handle DELETE requests
+function handleImgDelete($conn) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $Sno = isset($data['Sno']) ? $conn->real_escape_string($data['Sno']) : null;
+    $image_path =  isset($data['imageName']) ? $conn->real_escape_string($data['imageName']) : null;
+
+    if (!$Sno || !$image_path) {
+        echo json_encode(['error' => 'Missing required parameters']);
+        exit;
+    }
+
+   $query = "SELECT gallery_image_paths FROM registration_form WHERE Sno = ?";
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("i", $Sno);
+    $stmt->execute();
+    $stmt->bind_result($existingPaths);
+    $stmt->fetch();
+    $stmt->close();
+
+    if (!$existingPaths) {
+        echo json_encode(['error' => 'No images found for this record']);
+        exit;
+    }
+    $imageArray = explode(",", $existingPaths);
+        $updatedImageArray = array_filter($imageArray, function ($img) use ($image_path) {
+            return trim($img) !== trim($image_path);
+        });
+        $newImagePaths = implode(",", $updatedImageArray);
+
+        $updateQuery = "UPDATE registration_form SET gallery_image_paths = ? WHERE Sno = ?";
+        $updateStmt = $conn->prepare($updateQuery);
+        $updateStmt->bind_param("si", $newImagePaths, $Sno);
+        $updateStmt->execute();
+        $updateStmt->close();
+
+                // 🔹 Step 4: Delete the actual image file
+        $imagePath = $_SERVER['DOCUMENT_ROOT'] . "/Doctor_search/" . $image_path;
+        if (file_exists($imagePath)) {
+            unlink($imagePath);
+        }
+
+        echo json_encode(['message' => "Image deleted successfully"]);
 }
 
 ?>

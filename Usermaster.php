@@ -21,6 +21,12 @@ switch ($method) {
     case 'GET':
         handleGet($conn);
         break;
+    case 'POST':
+        handlePost($conn);
+        break;
+    case 'PUT':
+        handlePut($conn);
+        break;
     case 'DELETE':
         handleDelete($conn);
         break;
@@ -54,5 +60,44 @@ function handleDelete($conn) {
     }
 }
 
+function handlePost($conn) {
 
+    $inputData = file_get_contents("php://input");
+    $data = json_decode($inputData, true);
+
+    $Name = $conn->real_escape_string($data['name']);
+    $userName = $conn->real_escape_string($data['userName']);
+    $password = $conn->real_escape_string($data['password']);
+    $userRole = $conn->real_escape_string($data['userRole']);
+    $userStatus = $conn->real_escape_string($data['status']);
+    $ID = $conn->real_escape_string($data['ID']);
+
+        $sql = "INSERT INTO user_list (	RegNumber,Name,UserName, Password,UserRole,Status) VALUES ('$ID','$Name','$userName', '$password', '$userRole', '$userStatus')";
+
+        if ($conn->query($sql) === TRUE) {
+            echo json_encode(['code'=>200,'message'=>'Record Insert successfully']);
+        } else {
+            echo json_encode(['error' => $conn->error]);
+        }
+}
+function handlePut($conn) {
+    $inputData = file_get_contents("php://input");
+    $data = json_decode($inputData, true);
+
+    $ID = $conn->real_escape_string($data['sno']);
+    $Name = $conn->real_escape_string($data['name']);
+    $userName = $conn->real_escape_string($data['userName']);
+    $password = $conn->real_escape_string($data['password']);
+    $userRole = $conn->real_escape_string($data['userRole']);
+    $userStatus = $conn->real_escape_string($data['status']);
+
+
+        $sql = "UPDATE user_list SET  Name='$Name', UserName = '$userName', Password = '$password', UserRole = '$userRole' , Status = '$userStatus'  WHERE  Sno = '$ID' ";
+
+        if ($conn->query($sql) === TRUE) {
+            echo json_encode(['code'=>200,'message'=>'Record update successfully']);
+        } else {
+            echo json_encode(['error' => $conn->error]);
+        }
+}
 ?>
